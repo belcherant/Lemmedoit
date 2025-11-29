@@ -1,0 +1,271 @@
+:root{
+  --primary:#d86f2a;
+  --primary-800:#b85a22;
+  --muted:#6b6b6b;
+  --text:#222;
+  --bg:#ffffff;
+  --card:#fff;
+  --accent-ghost: rgba(216,111,42,0.08);
+  --danger:#d03a2a;
+  --radius:10px;
+  --shadow: 0 8px 24px rgba(34,34,34,0.06);
+  --nav-height:80px;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+}
+
+/* reset & base */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background: #fff;
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  font-size:16px;
+  line-height:1.45;
+}
+.container{ max-width:1150px; margin:0 auto; padding:0 28px; }
+
+/* header */
+.site-header{ position:sticky; top:0; background:transparent; z-index:100; padding:18px 0; }
+.header-inner{ display:flex; align-items:center; gap:16px; height:var(--nav-height); }
+.left-area{ display:flex; align-items:center; gap:14px; }
+
+/* Brand circle: adjusted to host a raster SVG/PNG nicely.
+   The image is centered and scaled to fill most of the circle. */
+.brand-circle{
+  width:86px;
+  height:86px;
+  border-radius:50%;
+  background:#00cfe7;                       /* visible badge color for transparent logos */
+  border:4px solid rgba(0,0,0,0.12);        /* subtle outer ring */
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  box-shadow:0 6px 18px rgba(0,0,0,0.06);
+  position:relative;
+}
+.brand-circle img{
+  width:92%;
+  height:92%;
+  max-width:92%;
+  max-height:92%;
+  object-fit:contain;       /* keep aspect ratio, no stretching */
+  display:block;
+  margin:auto;
+  pointer-events:none;
+  transform: translateZ(0); /* improve rendering */
+}
+.brand-fallback{ font-weight:700; color:var(--primary); font-size:0.92rem; display:none; }
+
+.prev-pill{ background:transparent; border:3px solid var(--primary); color:var(--primary); padding:10px 16px; border-radius:12px; cursor:pointer; font-weight:600; transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease; }
+.prev-pill:hover{ transform: translateY(-3px); box-shadow: var(--shadow); background: rgba(216,111,42,0.06); }
+
+.center-spacer{ flex:1; }
+.main-nav{ display:flex; align-items:center; gap:18px; }
+.nav-link{ color:var(--primary); text-decoration:none; padding:6px 8px; font-weight:600; }
+.nav-link:hover{ text-decoration:underline; color:var(--primary-800); }
+
+.btn{ display:inline-flex; align-items:center; justify-content:center; padding:10px 18px; border-radius:10px; cursor:pointer; border:0; font-weight:600; font-size:0.98rem; transition: transform .14s ease, box-shadow .14s ease, background-color .12s ease; }
+.btn-primary{ background:linear-gradient(180deg,var(--primary),var(--primary-800)); color:#fff; box-shadow:0 10px 30px rgba(216,111,42,0.18); }
+.btn-primary:hover{ transform: translateY(-3px); box-shadow:0 18px 44px rgba(216,111,42,0.22); }
+.btn-outline{ background:transparent; border:2px solid var(--primary); color:var(--primary); padding:10px 18px; border-radius:10px; }
+.btn-ghost{ background:var(--accent-ghost); color:var(--primary); border:1px solid rgba(0,0,0,0.06); padding:10px 16px; border-radius:10px; }
+.btn-linkish{ background:var(--primary); color:#fff; border-radius:10px; padding:8px 16px; }
+
+/* mobile nav toggle */
+.nav-toggle{ display:none; background:none; border:0; padding:6px; margin-left:8px; cursor:pointer; }
+.hamburger, .hamburger::before, .hamburger::after{ display:block; width:22px; height:2px; background:var(--text); border-radius:2px; position:relative; }
+.hamburger::before{ content:""; position:absolute; top:-6px }
+.hamburger::after{ content:""; position:absolute; top:6px }
+
+/* Mobile nav element - HIDDEN on desktop explicitly */
+#mobile-nav{ display:none; }
+.mobile-nav{ background:var(--card); border-top:1px solid rgba(0,0,0,0.04); }
+.mobile-inner{ padding:12px 18px; display:flex; flex-direction:column; gap:8px; }
+.mobile-link{ color:var(--text); text-decoration:none; padding:10px 12px; border-radius:8px; display:block }
+
+/* main content area */
+.main-content{ padding:36px 0; min-height:calc(100vh - var(--nav-height) - 120px); }
+
+/* typography & hero */
+.hero{ text-align:center; padding:72px 0 96px; }
+.hero h1{ font-size:96px; margin:0; color:var(--primary); font-weight:800; letter-spacing:-1px; }
+.hero .subtitle{ font-size:22px; margin-top:12px; color:var(--muted); }
+.hero .cta{ margin-top:42px; }
+
+/* cards & forms */
+.card{ background:var(--card); border-radius:var(--radius); padding:14px; box-shadow: var(--shadow); border:1px solid rgba(0,0,0,0.04); }
+.form-card{ max-width:720px; margin:0 auto; padding:22px; border-radius:8px; border:1px solid rgba(0,0,0,0.06); background:linear-gradient(180deg,#fff,#fff); box-shadow: 0 8px 30px rgba(34,34,34,0.04); }
+label{ display:block; margin-bottom:8px; color:var(--muted); font-weight:600; }
+.input{ width:100%; padding:12px 14px; border-radius:8px; border:1px solid rgba(0,0,0,0.06); font-size:16px; }
+textarea.input{ min-height:120px; }
+.form-actions{ margin-top:14px; display:flex; gap:10px; align-items:center; justify-content:flex-start; }
+.link-small{ color:var(--primary); text-decoration:underline; font-weight:600; }
+
+/* lists & job items */
+.job-list{ list-style:none; padding:0; margin:0; display:grid; gap:12px; grid-template-columns:1fr; }
+.job-item{ display:flex; justify-content:space-between; align-items:flex-start; padding:12px; border-radius:8px; border:1px solid rgba(0,0,0,0.04); background:#fff; box-shadow:0 6px 18px rgba(0,0,0,0.03); }
+.job-item .meta{ color:var(--muted); font-size:0.95rem; text-align:right; min-width:130px; }
+.job-item .title{ font-weight:700; color:var(--text); margin-bottom:6px; }
+
+/* tables (admin) */
+table{ width:100%; border-collapse:collapse }
+th, td{ padding:10px 8px; text-align:left }
+thead th{ color:var(--muted); font-size:0.9rem; border-bottom:1px solid rgba(0,0,0,0.04) }
+
+/* flashes */
+.flashes{ margin-bottom:18px; display:flex; flex-direction:column; gap:10px; }
+.flash{ padding:10px 14px; border-radius:8px; border:1px solid rgba(0,0,0,0.04); background:#fff; box-shadow:0 8px 20px rgba(0,0,0,0.04); }
+.flash-success{ border-left:4px solid #2ab673; }
+.flash-danger{ border-left:4px solid var(--danger); }
+
+/* footer */
+.site-footer{ padding:22px 0; color:var(--muted); font-size:0.92rem; border-top:1px solid rgba(0,0,0,0.04); margin-top:36px; }
+.footer-inner{ display:flex; justify-content:space-between; align-items:center; }
+
+/* responsive */
+@media (max-width:920px){
+  .nav-toggle{ display:block; }
+  .main-nav{ display:none; }
+  #mobile-nav{ display:block; max-height:0; overflow:hidden; transition:max-height .24s ease; }
+  .mobile-nav.open{ max-height:320px; }
+  .hero h1{ font-size:48px; }
+  .brand-circle{ width:66px; height:66px; }
+  .prev-pill{ padding:8px 12px; font-size:0.92rem; }
+  .container{ padding:0 16px; }
+  .job-item{ flex-direction:column; gap:8px; align-items:stretch; }
+}
+/* --- additions / tweaks for top-right clickable logo and footer removal --- */
+
+.brand-right{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:54px;
+  height:54px;
+  border-radius:8px;
+  overflow:hidden;
+  margin-left:12px;
+  text-decoration:none;
+  background:#00cfe7;
+  border:2px solid rgba(0,0,0,0.06);
+}
+.brand-right img{
+  width:86%;
+  height:86%;
+  object-fit:contain;    /* use contain so raster logo displays correctly without cropping */
+  display:block;
+  border-radius:6px;
+}
+
+/* ensure header spacing keeps things aligned with the added right logo */
+.header-inner{ align-items:center; }
+
+/* remove footer links area spacing (we kept the footer © text only) */
+.footer-inner{ display:flex; justify-content:flex-start; align-items:center; gap:8px; }
+
+/* keep mobile layout: hide brand-right on very small screens to avoid crowding */
+@media (max-width:520px){
+  .brand-right{ display:none; }
+}
+/* Make the left-brand anchor behave like the existing circle, no extra decoration */
+.brand-left {
+  display:inline-block;
+  text-decoration:none;
+  margin-right:8px;
+}
+.brand-left .brand-circle { margin:0; }
+
+/* Ensure clickable area has pointer cursor and no outline artifacts */
+.brand-left img, .brand-right img {
+  cursor:pointer;
+}
+
+/* Optional: small hover feedback for left logo */
+.brand-left:hover .brand-circle,
+.brand-right:hover {
+  transform: translateY(-2px);
+  transition: transform .12s ease;
+}
+
+
+/* ===== Button hover behavior: change inner color to white on hover/focus while keeping text and border orange =====
+   Applies to primary, outline, ghost, linkish, prev-pill, center-btn and generic .btn elements.
+   This block intentionally uses :not(:disabled) and focus-visible for accessibility and uses !important
+   for color/background/border so it overrides existing button variant rules.
+*/
+
+button:not(:disabled):hover,
+button:not(:disabled):focus-visible,
+input[type="button"]:not(:disabled):hover,
+input[type="button"]:not(:disabled):focus-visible,
+input[type="submit"]:not(:disabled):hover,
+input[type="submit"]:not(:disabled):focus-visible,
+a.btn:not(.disabled):hover,
+a.btn:not(.disabled):focus-visible,
+.btn:not(.disabled):hover,
+.btn:not(.disabled):focus-visible,
+.prev-pill:not(:disabled):hover,
+.prev-pill:not(:disabled):focus-visible,
+.center-btn:not(:disabled):hover,
+.center-btn:not(:disabled):focus-visible,
+.btn-primary:not(:disabled):hover,
+.btn-primary:not(:disabled):focus-visible,
+.btn-outline:not(:disabled):hover,
+.btn-outline:not(:disabled):focus-visible,
+.btn-ghost:not(:disabled):hover,
+.btn-ghost:not(:disabled):focus-visible,
+.btn-linkish:not(:disabled):hover,
+.btn-linkish:not(:disabled):focus-visible {
+  background-color: #ffffff !important;      /* inner becomes white */
+  color: var(--primary) !important;          /* lettering becomes orange */
+  border-color: var(--primary) !important;   /* border stays orange (added if missing) */
+  border-style: solid !important;
+  /* ensure there's a visible border if the element previously had none */
+  box-shadow: 0 1px 0 rgba(0,0,0,0.02) inset;
+}
+
+/* Some variants have thicker borders normally (prev-pill uses 3px). Preserve thickness where appropriate:
+   For elements that originally had border-width already, this keeps that; otherwise default to 1-2px.
+*/
+.prev-pill:not(:disabled):hover,
+.prev-pill:not(:disabled):focus-visible {
+  border-width: 3px !important;
+}
+
+/* Keep a subtle transform and elevated shadow on hover for elements that already used it */
+.btn-primary:not(:disabled):hover,
+.btn-primary:not(:disabled):focus-visible,
+.prev-pill:not(:disabled):hover,
+.prev-pill:not(:disabled):focus-visible {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 30px rgba(216,111,42,0.12) !important;
+}
+
+/* Avoid hover effects for disabled controls */
+button:disabled,
+input[type="button"]:disabled,
+input[type="submit"]:disabled,
+.btn:disabled,
+.center-btn:disabled,
+a.btn.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  filter: none;
+  background-color: initial !important;
+  color: initial !important;
+  border-color: initial !important;
+}
+
+/* Ensure focus outlines remain accessible */
+button:focus-visible,
+input[type="button"]:focus-visible,
+input[type="submit"]:focus-visible,
+a.btn:focus-visible,
+.btn:focus-visible {
+  outline: 3px solid rgba(216,111,42,0.12);
+  outline-offset: 2px;
+}
