@@ -42,6 +42,7 @@ from models import (
     get_job_by_id,
     create_application,
     get_applications_by_job,
+    get_applications_by_user,
     get_jobs_by_employer,
     create_rating,
     get_ratings_for_target,
@@ -254,6 +255,14 @@ def date_only(value):
 def inject_current_year():
     return {"current_year": datetime.utcnow().year}
 
+@app.context_processor
+def inject_has_edit_profile():
+    # Template-safe way to detect whether the edit_profile endpoint exists.
+    # Avoids calling url_for inside templates which raises BuildError if the endpoint is missing.
+    try:
+        return {"has_edit_profile": "edit_profile" in app.view_functions}
+    except Exception:
+        return {"has_edit_profile": False}
 
 # safe_url_for helper for templates (defensive - prevents BuildError from bubbling to template)
 @app.context_processor
@@ -265,6 +274,30 @@ def utility_processor():
             return "#"
     return {"safe_url_for": safe_url_for}
 
+# Template global to display human-friendly role names in templates
+@app.template_global()
+def role_display(role):
+    """
+    Return a human-friendly display string for a role.
+    Examples:
+      'admin' -> 'Administrator'
+      'client' -> 'Client'
+      'contractor' -> 'Contractor'
+    Falls back to capitalized raw role or 'N/A'.
+    """
+    try:
+        mapping = {
+            "admin": "Administrator",
+            "client": "Client",
+            "contractor": "Contractor",
+        }
+        if role is None:
+            return "N/A"
+        # Normalize and look up mapping
+        key = str(role).strip().lower()
+        return mapping.get(key, key.capitalize())
+    except Exception:
+        return "N/A"
 
 # --- Geocoding helper (uses free OpenStreetMap Nominatim) ---
 def geocode_address(address):
@@ -298,13 +331,14 @@ def index():
     # If user is signed in, send them to their landing page based on role.
     # Otherwise render the public (unsigned) homepage.
     if current_user.is_authenticated:
-        if getattr(current_user, "role", None) == "admin":
+        role = getattr(current_user, "role", None)
+        if role == "admin":
             return redirect(url_for("admin_dashboard"))
-        # role checks updated: employer -> client
-        if getattr(current_user, "role", None) == "client":
+        if role == "client":
             return redirect(url_for("client_dashboard"))
-        # default signed-in landing: profile
-        return redirect(url_for("profile"))
+        # default signed-in landing for non-admin, non-client roles:
+        # treat as contractor landing page
+        return redirect(url_for("contractor_dashboard"))
     return render_template("index.html")
 
 
@@ -377,6 +411,28 @@ def signup():
 
     return render_template("signup.html")
 
+@app.route("/contractor/dashboard")
+@require_roles("contractor")
+def contractor_dashboard():
+    """
+    Show a contractor their applications and the corresponding job summary.
+    """
+    try:
+        user_id = int(current_user.get_id())
+        apps = get_applications_by_user(app.config["DATABASE"], user_id)
+        # Build enriched list of entries with job and employer info
+        applications = []
+        for a in apps:
+            job = get_job_by_id(app.config["DATABASE"], a["job_id"])
+            employer = None
+            if job:
+                employer = get_user_by_id(app.config["DATABASE"], job.get("employer_id"))
+            applications.append({"application": a, "job": job, "employer": employer})
+        return render_template("contractor_dashboard.html", applications=applications)
+    except Exception:
+        app.logger.exception("Failed to load contractor dashboard")
+        flash("Unable to load your dashboard right now.", "danger")
+        return redirect(url_for("index"))
 
 @app.route(f"/admin/{ADMIN_SECRET_TOKEN}/signup", methods=["GET", "POST"])
 def admin_signup_secret():
