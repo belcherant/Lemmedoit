@@ -51,7 +51,8 @@
 
     <div class="form-actions" style="margin-top:14px;">
       <button class="btn btn-primary" type="submit">Post job</button>
-      <a class="btn btn-outline" href="{{ url_for('employer_dashboard') }}">Cancel</a>
+      <!-- updated: use client_dashboard (exists in app.py) to avoid BuildError -->
+      <a class="btn btn-outline" href="{{ url_for('client_dashboard') }}">Cancel</a>
     </div>
   </form>
 </div>
