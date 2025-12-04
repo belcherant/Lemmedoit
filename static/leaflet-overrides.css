@@ -1,0 +1,17 @@
+/* Prevent global img rules (eg. img { max-width:100% }) from breaking Leaflet tiles */
+.leaflet-container img {
+  max-width: none !important;
+  image-rendering: auto !important;
+}
+
+/* Preserve tile sizing in case global CSS removes inline sizing */
+.leaflet-container .leaflet-tile {
+  width: 256px !important;
+  height: 256px !important;
+}
+
+/* Ensure the map container has a sensible default/min height */
+#map, .leaflet-container {
+  min-height: 420px;
+  box-sizing: content-box;
+}
