@@ -17,18 +17,45 @@
 
     <div style="margin-top:12px;">
       {% if current_user.is_authenticated and (current_user.get_id()|int) != (job.employer_id|int) %}
-        <a class="btn btn-primary" href="{{ url_for('messages_page') }}?other_id={{ job.employer_id|int }}">Message Poster</a>
+        <a class="btn btn-outline" href="{{ url_for('messages_page') }}?other_id={{ job.employer_id|int }}">Message Poster</a>
+
+        {# Apply button / form: only visible to contractors, not to clients or job owner #}
+        {% if current_user.is_authenticated and (current_user.role|default('')|lower) == 'contractor' %}
+          <form method="post" action="{{ url_for('apply_job', job_id=job.id) }}" style="display:inline-block; margin-left:8px;">
+            <input type="hidden" name="job_id" value="{{ job.id }}">
+            <button type="submit" class="btn btn-primary">Apply</button>
+          </form>
+        {% endif %}
       {% endif %}
+
       {% if is_owner %}
         <a class="btn btn-outline" href="{{ url_for('edit_job', job_id=job.id) }}">Edit</a>
+        <a class="btn btn-outline" href="{{ url_for('job_applicants', job_id=job.id) }}" style="margin-left:8px;">View applicants</a>
       {% endif %}
     </div>
+
+    {# Full application form with file uploads: only for contractors and not job owner #}
+    {% if current_user.is_authenticated and (current_user.role|default('')|lower) == 'contractor' and (current_user.get_id()|int) != (job.employer_id|int) %}
+      <div style="margin-top:16px;">
+        <h4>Apply with files</h4>
+        <form method="post" action="{{ url_for('apply_job', job_id=job.id) }}" enctype="multipart/form-data">
+          <label for="cover_letter_file">Cover Letter (PDF only)</label>
+          <input id="cover_letter_file" name="cover_letter_file" type="file" accept="application/pdf, .pdf">
+
+          <label for="resume_file" style="margin-top:10px; display:block;">Resume (PDF only)</label>
+          <input id="resume_file" name="resume_file" type="file" accept="application/pdf, .pdf">
+
+          <div style="margin-top:8px;">
+            <button type="submit" class="btn btn-primary">Submit application</button>
+          </div>
+        </form>
+      </div>
+    {% endif %}
   </div>
 
   <aside style="width:260px;">
     <div class="card">
       <div><strong>Employer</strong></div>
-      {# Use the employer object passed from the view instead of calling get_user_by_id from the template #}
       {% if employer %}
         <div>{{ employer.username or employer.first_name or employer.email }}</div>
       {% else %}
