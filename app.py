@@ -739,11 +739,6 @@ def _save_uploaded(f):
 @app.route("/apply/<int:job_id>", methods=["POST"])
 @login_required
 def apply_job(job_id):
-    """
-    Apply for a job (contractors only). Prevents self-application and duplicate apps.
-    Saves uploaded PDF cover_letter_file and resume_file (if provided) into UPLOAD_DIR via _save_uploaded,
-    stores the saved filenames in the DB using create_application(..., cover_letter_path=..., resume_path=...).
-    """
     # Ensure current_user id is valid
     try:
         current_id = int(current_user.get_id())
@@ -811,9 +806,12 @@ def apply_job(job_id):
     cover_letter_text = (request.form.get("cover_letter") or "").strip() or None
     resume_text = (request.form.get("resume_text") or "").strip() or None
 
-    # Save application to DB (store filenames)
+    # Save application to DB (store filenames). Be defensive about model signatures.
+    app_record = None
+    app_id = None
     try:
-        create_application(
+        # Preferred: model supports storing file paths
+        app_record = create_application(
             app.config["DATABASE"],
             job_id,
             current_id,
@@ -822,23 +820,72 @@ def apply_job(job_id):
             cover_letter_path=cover_letter_filename,
             resume_path=resume_filename,
         )
-    except Exception:
-        # fallback to older signature if present
+        # create_application is expected to return a dict with id, but handle other shapes defensively
+        if isinstance(app_record, dict):
+            app_id = app_record.get("id") or app_record.get("app_id") or app_record.get("application_id")
+    except TypeError:
+        # model likely has older signature without file path args; fall back
         try:
-            create_application(app.config["DATABASE"], job_id, current_id, cover_letter_text, resume_text)
+            app_record = create_application(app.config["DATABASE"], job_id, current_id, cover_letter_text, resume_text)
+            if isinstance(app_record, dict):
+                app_id = app_record.get("id") or app_record.get("app_id") or app_record.get("application_id")
         except Exception:
             flash("Unable to save your application. Please try again.", "danger")
             return redirect(url_for("job_detail", job_id=job_id))
+    except Exception:
+        # any other error while creating the application
+        try:
+            app_record = create_application(app.config["DATABASE"], job_id, current_id, cover_letter_text, resume_text)
+            if isinstance(app_record, dict):
+                app_id = app_record.get("id") or app_record.get("app_id") or app_record.get("application_id")
+        except Exception:
+            flash("Unable to save your application. Please try again.", "danger")
+            return redirect(url_for("job_detail", job_id=job_id))
+
+    # If create_application didn't already persist file-path columns but the DB supports them,
+    # update the new application row with the stored filenames.
+    if app_id and (cover_letter_filename or resume_filename):
+        try:
+            import sqlite3
+
+            db_path = app.config["DATABASE"]
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+
+            # find columns on the applications table
+            cur.execute("PRAGMA table_info(applications)")
+            cols = [r[1] for r in cur.fetchall()]  # column name is at index 1
+
+            updates = []
+            params = []
+            if "cover_letter_path" in cols and cover_letter_filename:
+                updates.append("cover_letter_path = ?")
+                params.append(cover_letter_filename)
+            if "resume_path" in cols and resume_filename:
+                updates.append("resume_path = ?")
+                params.append(resume_filename)
+
+            if updates:
+                params.append(app_id)
+                sql = "UPDATE applications SET " + ", ".join(updates) + " WHERE id = ?"
+                cur.execute(sql, params)
+                conn.commit()
+
+            conn.close()
+        except Exception:
+            # Non-fatal — if this fails we still continue (files may still be inaccessible
+            # if DB/schema doesn't match; handle that separately by migrating schema).
+            app.logger.exception("Failed to persist uploaded filenames for application %s", app_id)
 
     # Notify employer (best-effort)
     try:
         employer = get_user_by_id(app.config["DATABASE"], int(employer_id))
         if employer and employer.get("email"):
-            subject = f"New application for: {job.get('title') or job.title}"
-            applicant_name = getattr(current_user, "username", None) or getattr(current_user, "first_name", "") or current_user.email
+            subject = f"New application for: {job.get('title') or getattr(job, 'title', '')}"
+            applicant_name = getattr(current_user, "username", None) or getattr(current_user, "first_name", "") or getattr(current_user, "email", "")
             job_url = url_for("job_detail", job_id=job_id, _external=True)
-            text_body = f"{applicant_name} has applied for your job '{job.get('title') or job.title}'.\n\nView job: {job_url}"
-            html_body = f"<p><strong>{applicant_name}</strong> has applied for your job '<em>{job.get('title') or job.title}</em>'.</p><p><a href='{job_url}'>View job</a></p>"
+            text_body = f"{applicant_name} has applied for your job '{job.get('title') or getattr(job, 'title', '')}'.\n\nView job: {job_url}"
+            html_body = f"<p><strong>{applicant_name}</strong> has applied for your job '<em>{job.get('title') or getattr(job, 'title', '')}</em>'.</p><p><a href='{job_url}'>View job</a></p>"
             send_email("New application on Jobsite", employer.get("email"), html_body=html_body, text_body=text_body)
     except Exception:
         pass
@@ -852,35 +899,106 @@ def apply_job(job_id):
         except Exception:
             return redirect(url_for("job_detail", job_id=job_id))
 
+@app.context_processor
+def inject_tile_settings():
+    """
+    Provide TILE_URL and TILE_ATTRIBUTION for the map template.
+    - If MAPTILER_KEY is present in env/app.config, use MapTiler (recommended).
+    - Otherwise fall back to the public OSM tiles (rate-limited).
+    """
+    key = os.environ.get("MAPTILER_KEY") or app.config.get("MAPTILER_KEY")
+    if key:
+        # MapTiler example (requires free account / key)
+        tile_url = f"https://api.maptiler.com/maps/streets/{{z}}/{{x}}/{{y}}.png?key={key}"
+        tile_attr = '© MapTiler © OpenStreetMap contributors'
+    else:
+        # Public OSM tiles (subject to usage policy / rate limits)
+        tile_url = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        tile_attr = '&copy; OpenStreetMap contributors'
+    return {"TILE_URL": tile_url, "TILE_ATTRIBUTION": tile_attr}
+
+# Profile view: allow public access to view any user's profile and show ratings.
+# Also keep existing behavior for viewing your own profile when signed in.
 @app.route("/profile")
 @app.route("/profile/<int:user_id>")
-@login_required
 def profile(user_id=None):
-    # If no user_id provided, show current_user profile
-    if user_id is None:
-        return render_template("profile.html", user=current_user)
-    # View other user's profile
-    row = get_user_by_id(app.config["DATABASE"], user_id)
-    if not row:
-        flash("User not found.", "warning")
-        return redirect(url_for("index"))
-    # Convert to object-like
-    class SimpleUser:
-        def __init__(self, r):
-            self.id = r["id"]
-            self.email = r["email"]
-            self.role = r.get("role", "contractor")
-            self.is_banned = r.get("is_banned", False)
-            self.banned_until = r.get("banned_until")
-            self.username = r.get("username")
-            self.first_name = r.get("first_name")
-            self.last_name = r.get("last_name")
+    """
+    Render a user's profile page.
+    - If user_id is provided, show that user's profile (public).
+    - If not provided, require authentication and show current user's profile.
+    - Collect ratings for the target user and compute an average for display.
+    """
+    db_path = app.config.get("DATABASE")
 
-    other = SimpleUser(row)
-    # Ratings for this user
-    ratings = get_ratings_for_target(app.config["DATABASE"], "user", other.id)
-    avg = get_average_rating_for_target(app.config["DATABASE"], "user", other.id)
-    return render_template("profile.html", user=other, ratings=ratings, avg_rating=avg)
+    # Determine which user to display
+    if user_id is None:
+        # show current user's profile (must be signed in)
+        if not current_user.is_authenticated:
+            flash("Please sign in to view your profile.", "warning")
+            return redirect(url_for("signin"))
+        try:
+            target_id = int(current_user.get_id())
+        except Exception:
+            flash("Invalid user.", "danger")
+            return redirect(url_for("index"))
+    else:
+        target_id = int(user_id)
+
+    # Load the target user
+    user_row = get_user_by_id(db_path, target_id)
+    if not user_row:
+        abort(404)
+
+    # Load ratings for this user (non-fatal if it fails)
+    ratings = []
+    avg_rating = None
+    try:
+        rows = get_ratings_for_target(db_path, "user", target_id) or []
+        total = 0
+        count = 0
+        for r in rows:
+            # normalize rating value
+            try:
+                r_rating = int(r.get("rating") if isinstance(r, dict) else r.rating)
+            except Exception:
+                continue
+            total += r_rating
+            count += 1
+
+            # attach rater email for display if possible (best-effort)
+            rater_id = r.get("rater_id") if isinstance(r, dict) else getattr(r, "rater_id", None)
+            rater_email = None
+            try:
+                if rater_id:
+                    rr = get_user_by_id(db_path, int(rater_id))
+                    if rr:
+                        rater_email = rr.get("email") if isinstance(rr, dict) else getattr(rr, "email", None)
+            except Exception:
+                rater_email = None
+
+            # ensure template can access these keys
+            if isinstance(r, dict):
+                r["rater_email"] = rater_email
+            else:
+                # if r is an object-like row, try to set attribute (best-effort)
+                try:
+                    setattr(r, "rater_email", rater_email)
+                except Exception:
+                    pass
+
+            ratings.append(r)
+
+        if count > 0:
+            avg_rating = float(total) / float(count)
+    except Exception:
+        # ignore rating loading errors but log
+        app.logger.exception("Failed to load ratings for user %s", target_id)
+        ratings = []
+        avg_rating = None
+
+    # Render the profile template (template already contains logic to show rating form only when
+    # current_user is authenticated and viewing another user's profile)
+    return render_template("profile.html", user=user_row, avg_rating=avg_rating, ratings=ratings)
 
 
 #
