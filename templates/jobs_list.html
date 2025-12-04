@@ -46,11 +46,15 @@
         <!-- Message button: opens Messages UI and requests conversation with the job poster -->
         {% if current_user.is_authenticated and (current_user.get_id()|int) != (job.employer_id|int) %}
           <a class="btn btn-outline" href="{{ url_for('messages_page') }}?other_id={{ job.employer_id|int }}">Message Poster</a>
+
+          {# Contractors get an Apply link that opens the job_detail where they can include a cover letter.
+              Clients (job listers) do NOT see the apply link for their own postings. #}
+          {% if (current_user.role|default('')|lower) == 'contractor' %}
+            <a class="btn btn-primary" href="{{ url_for('job_detail', job_id=job.id) }}" style="margin-top:6px;">Apply</a>
+          {% endif %}
         {% endif %}
       </div>
     </li>
   {% endfor %}
 </ul>
-
-... (pagination remains unchanged)
 {% endblock %}
