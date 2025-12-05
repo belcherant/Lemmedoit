@@ -23,14 +23,17 @@
   #map {
     position: relative;
     flex:1;
-    min-height:48vh;
-    height:56vh;
+    /* keep the map height bounded so it cannot grow indefinitely */
+    height: min(56vh, 720px);
+    min-height: 360px;
+    max-height: 80vh;
     width:100%;
     border-radius:8px;
     border:1px solid rgba(0,0,0,0.06);
     background:#f3f5f7;
     overflow:hidden;
     z-index:0;
+    box-sizing: border-box;
   }
 
   /* Static-image fallback inside map when tiles fail */
@@ -101,7 +104,7 @@
   @media (max-width:900px) {
     .map-wrapper { flex-direction:column; }
     .sidebar { width:100%; max-width:100%; }
-    #map { height:420px; min-height:360px; }
+    #map { height:420px; min-height:360px; max-height:70vh; }
   }
 </style>
 {% endblock %}
@@ -147,8 +150,26 @@
 
 {% block scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
+/* Ensure marker images are pulled from unpkg (avoid local 404s).
+   This must run after leaflet.js is available. */
+if (window.L && L.Icon && L.Icon.Default) {
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'
+  });
+}
+
+/* Default Carto tile URL for light assignment use. Can be overridden by passing TILE_URL from Flask. */
+const CARTO_TILE_URL = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+
 (function () {
+  // safeguard flags to prevent repeated init/switch storms
+  let mapInitInProgress = false;
+  let primarySwitching = false;
+
   // Helper: escape HTML for popup content
   function escapeHtml(s) {
     if (s === null || s === undefined) return '';
@@ -166,7 +187,7 @@
   const mapEl = document.getElementById('map');
   const mapOverlay = document.getElementById('mapOverlay');
 
-  let map, markersLayer, userMarker, radiusCircle;
+  let map = null, markersLayer = null, userMarker = null, radiusCircle = null;
   let currentCenter = { lat: 39.8283, lng: -98.5795 }; // default US center
   let currentRadius = Number(radiusSelect.value) || 10; // miles
 
@@ -180,21 +201,33 @@
     mapOverlay.classList.add('hidden');
   }
 
+  // Haversine: distance in miles
+  function haversineMiles(lat1, lon1, lat2, lon2) {
+    const toRad = v => v * Math.PI / 180;
+    const R = 3958.8; // miles
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
   // Build a staticmap URL for fallback (single image, not interactive)
   function staticMapUrl(lat, lon, zoom) {
-    // staticmap.openstreetmap.de has some usage limits but is convenient for quick dev fallback
     const z = zoom || 4;
     const size = '1024x512';
     return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${z}&size=${size}&markers=${lat},${lon},red-pushpin`;
   }
 
-  // Append a static fallback image into the map container (removes leaflets layers)
+  // Append a static fallback image into the map container (removes leaflet layers)
   function showStaticFallback(lat, lon, zoom) {
-    // remove any existing leaflet map (if present)
+    // Ensure we remove any existing leaflet map and panes to avoid duplicates
     try {
       if (map) {
         map.remove();
         map = null;
+        window.__jobs_map_inited = false;
       }
     } catch (e) { /* ignore */ }
 
@@ -211,36 +244,115 @@
     mapEl.appendChild(img);
   }
 
+  function removeStaticFallback() {
+    const existing = mapEl.querySelector('img.static-fallback');
+    if (existing) existing.remove();
+  }
+
   function initMapOnce() {
     // If Leaflet missing, show overlay and bail
     if (!window.L || !window.L.map) {
       console.warn('Leaflet not available');
       showOverlay('Map library not loaded');
-      // Also try to display a static fallback so the UI isn't blank
       showStaticFallback(currentCenter.lat, currentCenter.lng, 4);
       return;
     }
     if (window.__jobs_map_inited) return;
     window.__jobs_map_inited = true;
 
-    // create the map (use preferCanvas to reduce DOM pressure)
-    map = L.map('map', { preferCanvas: true }).setView([currentCenter.lat, currentCenter.lng], 5);
+    // Get map element
+    const mapEl = document.getElementById('map');
 
-    // Use configured tile provider if provided by Flask context, otherwise default OSM
-    const tileUrl = '{{ TILE_URL|default("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png") }}';
-    const tileAttr = '{{ TILE_ATTRIBUTION|default("&copy; OpenStreetMap contributors")|e }}';
+    // CRITICAL: Clean up any existing Leaflet debris
+    mapEl.innerHTML = '<div id="mapOverlay" class="hidden">Loading map…</div>';
+    mapEl.style.cssText = `
+      position: relative;
+      flex: 1;
+      min-height: 400px;
+      height: 500px;
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid rgba(0,0,0,0.06);
+      background: #f3f5f7;
+      overflow: hidden;
+      z-index: 0;
+    `;
+
+    // Create map with FIXED viewport
+    map = L.map('map', {
+      preferCanvas: true,
+      maxBounds: L.latLngBounds(
+        L.latLng(-85, -180),
+        L.latLng(85, 180)
+      ),
+      maxBoundsViscosity: 1.0,
+      worldCopyJump: false,
+      zoom: 10,
+      center: [currentCenter.lat, currentCenter.lng],
+      fadeAnimation: false,
+      zoomAnimation: false,
+      markerZoomAnimation: false,
+      zoomSnap: 0,
+      zoomDelta: 0.5,
+      inertia: false
+    });
+
+    // Force map size BEFORE adding tiles
+    setTimeout(() => {
+      if (map) {
+        map.invalidateSize(true);
+        const size = map.getSize();
+        if (size.y > 1000) {
+          map.getContainer().style.height = '500px';
+          map.getContainer().parentElement.style.height = '500px';
+          map.invalidateSize(true);
+        }
+      }
+    }, 100);
+
+    // Tile layer with EXPLICIT limits
+    const tileUrl = '{{ TILE_URL|default("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png") }}';
+    const tileAttr = '{{ TILE_ATTRIBUTION|default("&copy; OpenStreetMap contributors & CARTO")|e }}';
 
     const tileOpts = {
       attribution: tileAttr,
-      maxZoom: 19,
-      detectRetina: false,
-      updateWhenIdle: true,      // reduce requests while dragging/zooming
+      maxZoom: 18,
+      minZoom: 3,
+      bounds: [[-85, -180], [85, 180]],
+      noWrap: true,
+      updateWhenIdle: true,
       updateWhenZooming: false,
-      keepBuffer: 2
+      keepBuffer: 1,
+      crossOrigin: true,
+      reuseTiles: true,
+      tileSize: 256,
+      zoomOffset: 0,
+      errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
     };
 
-    // Primary (configured) tiles
     const primaryTiles = L.tileLayer(tileUrl, tileOpts).addTo(map);
+
+    // CRITICAL: Monkey-patch Leaflet to prevent infinite height
+    const originalSetPosition = L.GridLayer.prototype._setPosition;
+    L.GridLayer.prototype._setPosition = function() {
+      const container = this._container;
+      if (container) {
+        container.style.maxHeight = '500px';
+        container.style.height = '100%';
+        container.style.overflow = 'hidden';
+      }
+      return originalSetPosition.call(this);
+    };
+
+    // Monitor and fix tile positions
+    primaryTiles.on('tileload', function(e) {
+      const tile = e.tile;
+      if (tile) {
+        tile.style.position = 'absolute';
+        tile.style.maxHeight = '256px';
+        tile.style.maxWidth = '256px';
+      }
+    });
 
     // Fallback tiles (CartoCDN)
     const fallbackUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
@@ -493,31 +605,66 @@
     const layers = [];
     const jobDetailTemplate = '{{ url_for("job_detail", job_id=0) }}';
 
+    const centerProvided = (centerLat !== null && centerLng !== null && Number.isFinite(centerLat) && Number.isFinite(centerLng));
+    const radiusMiles = Number(currentRadius) || null;
+
     jobs.forEach(job => {
       const lat = job.lat !== null ? Number(job.lat) : null;
       const lng = job.lng !== null ? Number(job.lng) : null;
       const displayLoc = job.short_location || (job.location_text||'').split(',').slice(0,2).join(', ');
+
+      // Create job detail URL once
+      const jobUrl = (jobDetailTemplate.replace('/0','/' + encodeURIComponent(job.id)));
+
+      // Build popup HTML (same as before)
       const popupHtml = '<div><strong>' + escapeHtml(job.title||'') + '</strong>' +
                         '<div style="font-size:12px;color:#666;margin-top:4px;">' + escapeHtml(displayLoc) + (job.distance_miles ? (' • ' + job.distance_miles + ' mi') : '') + '</div>' +
                         '<div style="margin-top:8px;">' + escapeHtml((job.description||'').substring(0,200)) + (job.description && job.description.length > 200 ? '...' : '') + '</div>' +
-                        '<div style="margin-top:6px;"><a href="' + (jobDetailTemplate.replace('/0','/' + encodeURIComponent(job.id))) + '">View job</a> • ' +
+                        '<div style="margin-top:6px;"><a href="' + jobUrl + '">View job</a> • ' +
                         '<a href="/messages?other_id=' + encodeURIComponent(job.employer_id) + '">Message Poster</a></div></div>';
-      if (lat !== null && lng !== null && Number.isFinite(lat) && Number.isFinite(lng) && markersLayer) {
+
+      // Determine if this job is inside the radius (when center provided).
+      let withinRadius = true;
+      if (centerProvided) {
+        // Prefer server-provided distance if available, otherwise compute.
+        let dist = null;
+        if (job.distance_miles !== undefined && job.distance_miles !== null && job.distance_miles !== '') {
+          dist = Number(job.distance_miles);
+        } else if (lat !== null && lng !== null) {
+          dist = haversineMiles(centerLat, centerLng, lat, lng);
+        }
+        if (dist === null) {
+          // If we don't know the distance, be conservative: skip placing marker
+          withinRadius = false;
+        } else {
+          withinRadius = (radiusMiles === null) ? true : (dist <= radiusMiles + 0.0001);
+        }
+      }
+
+      // Add marker only if coordinates exist and (when center given) the job is within radius.
+      if (lat !== null && lng !== null && Number.isFinite(lat) && Number.isFinite(lng) && markersLayer && withinRadius) {
         try {
-          const marker = L.marker([lat, lng]).addTo(markersLayer);
-          marker.bindPopup(popupHtml);
+          const marker = L.marker([lat, lng], { title: job.title || 'Job' }).addTo(markersLayer);
+          marker.bindPopup(popupHtml, { maxWidth: 300 });
+
+          // Clicking the marker navigates to the job detail page (makes it directly clickable)
+          marker.on('click', function () {
+            window.location.href = jobUrl;
+          });
+
           layers.push(marker);
         } catch (e) {
           console.warn('Failed to add marker', e);
         }
       }
-      listHtml += '<a href="' + (jobDetailTemplate.replace('/0','/' + encodeURIComponent(job.id))) + '"><strong>' + escapeHtml(job.title||'') + '</strong>' +
+
+      listHtml += '<a href="' + jobUrl + '"><strong>' + escapeHtml(job.title||'') + '</strong>' +
                   '<div style="font-size:12px;color:#666;margin-top:4px;">' + escapeHtml(displayLoc) + (job.distance_miles ? (' • ' + job.distance_miles + ' mi') : '') + '</div></a>';
     });
 
     jobsListEl.innerHTML = '<div class="job-list-mini">' + listHtml + '</div>';
 
-    if (centerLat !== null && centerLng !== null && map) {
+    if (centerProvided && map) {
       try {
         radiusCircle = L.circle([centerLat, centerLng], { radius: (currentRadius || 10) * 1609.344, color: '#0077ff', opacity: 0.12, weight: 1, fillOpacity: 0.04 }).addTo(map);
         map.setView([centerLat, centerLng], 13);
